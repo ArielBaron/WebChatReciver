@@ -4,6 +4,44 @@ const http = require('http');
 const PORT = 37123;
 let server;
 
+const EXTENSION_ALIASES = {
+  yaml: ['yaml', 'yml'],
+};
+
+function normalizeBaseName(name) {
+  return name
+    .toLowerCase()
+    .replace(/[\s_\-]+/g, '');
+}
+
+function matchesExtension(label, actualExt) {
+  const normalized = label.toLowerCase();
+  const aliases = EXTENSION_ALIASES[normalized] || [normalized];
+  return aliases.includes(actualExt);
+}
+
+async function findMatchingFile(title, language) {
+  if (!title || !language) return null;
+
+  const normalizedTitle = normalizeBaseName(title);
+  const files = await vscode.workspace.findFiles('**/*', '**/node_modules/**');
+
+  for (const fileUri of files) {
+    const fileName = fileUri.path.split('/').pop();
+    const dotIndex = fileName.lastIndexOf('.');
+    if (dotIndex === -1) continue;
+
+    const baseName = fileName.slice(0, dotIndex);
+    const actualExt = fileName.slice(dotIndex + 1).toLowerCase();
+
+    if (normalizeBaseName(baseName) === normalizedTitle && matchesExtension(language, actualExt)) {
+      return fileUri;
+    }
+  }
+
+  return null;
+}
+
 function activate(context) {
   console.log('im on');
 
@@ -32,36 +70,61 @@ function activate(context) {
       console.log(body);
       console.log('--- end body ---');
 
-      try {
-        const json = JSON.parse(body);
-        const code = json.code;
+      (async () => {
+        try {
+          const json = JSON.parse(body);
+          const code = json.code;
+          const title = json.title;
+          const language = json.language;
+          const mode = json.mode || 'match';
 
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-          console.log('No active editor — nothing to replace');
+          let targetDoc;
+
+          if (mode === 'active') {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+              console.log('mode=active but no active editor — nothing to do');
+              res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+              res.end(JSON.stringify({ status: 'error', message: 'no active editor' }));
+              return;
+            }
+            targetDoc = editor.document;
+          } else {
+            // mode === 'match' — find by name, or fail clearly. No silent fallback.
+            const matchedUri = await findMatchingFile(title, language);
+            if (!matchedUri) {
+              console.log(`no file matching "${title}" (${language}) found in workspace`);
+              res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+              res.end(JSON.stringify({
+                status: 'error',
+                message: `No file matching "${title}" (${language}) found in workspace`,
+              }));
+              return;
+            }
+            console.log('matched file by name:', matchedUri.path);
+            targetDoc = await vscode.workspace.openTextDocument(matchedUri);
+            await vscode.window.showTextDocument(targetDoc);
+          }
+
+          const editor = vscode.window.activeTextEditor;
+          const fullRange = new vscode.Range(
+            targetDoc.positionAt(0),
+            targetDoc.positionAt(targetDoc.getText().length)
+          );
+
+          await editor.edit((editBuilder) => {
+            editBuilder.replace(fullRange, code);
+          });
+
+          console.log('edit applied');
           res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-          res.end(JSON.stringify({ status: 'no active editor' }));
-          return;
+          res.end(JSON.stringify({ status: 'ok' }));
+        } catch (err) {
+          console.log('error handling request:', err.message);
+          res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify({ status: 'error', message: err.message }));
         }
-
-        const fullRange = new vscode.Range(
-          editor.document.positionAt(0),
-          editor.document.positionAt(editor.document.getText().length)
-        );
-
-        editor.edit((editBuilder) => {
-          editBuilder.replace(fullRange, code);
-        }).then((success) => {
-          console.log('edit applied:', success);
-        });
-
-        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify({ status: 'ok' }));
-      } catch (err) {
-        console.log('error handling request:', err.message);
-        res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-        res.end(JSON.stringify({ status: 'error', message: err.message }));
-      }
+      })();
     });
   });
 
