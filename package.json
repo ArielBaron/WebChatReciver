@@ -1,0 +1,16 @@
+{
+  "name": "webchatreceiver",
+  "displayName": "WebChatReceiver",
+  "description": "Receives code from the WebChatInsert browser extension and inserts it into the active editor",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js"
+}
