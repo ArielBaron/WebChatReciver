@@ -12,5 +12,8 @@
   "activationEvents": [
     "onStartupFinished"
   ],
-  "main": "./extension.js"
+  "main": "./extension.js",
+  "dependencies": {
+    "dotenv": "^17.4.2"
+  }
 }

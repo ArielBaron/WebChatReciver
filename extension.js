@@ -1,7 +1,13 @@
 const vscode = require('vscode');
 const http = require('http');
-
-const PORT = 37123;
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+const PORT = process.env.PORT;
+console.log('cwd:', process.cwd());
+console.log('__dirname:', __dirname);
+console.log('.env path:', path.join(__dirname, '.env'));
+console.log('.env exists:', require('fs').existsSync(path.join(__dirname, '.env')));
+console.log('PORT:', process.env.PORT);
 let server;
 
 const EXTENSION_ALIASES = {
